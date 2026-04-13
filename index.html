@@ -163,7 +163,7 @@
 
     function showMessage(msg) { state.message = msg; state.messageTimer = 180; }
 
-    // --- DRAWING PRIMITIVES (Version 3.0 Aesthetics) ---
+    // --- DRAWING PRIMITIVES ---
     function drawGrave(x, y) { ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 15; ctx.shadowOffsetY = 10; let grad = ctx.createLinearGradient(x, y, x, y + 80); grad.addColorStop(0, '#9a9a9a'); grad.addColorStop(1, '#333'); ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x + 40, y + 30, 40, Math.PI, 0); ctx.lineTo(x + 80, y + 80); ctx.lineTo(x, y + 80); ctx.fill(); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; ctx.fillStyle = '#111'; ctx.font = "bold 16px Arial"; ctx.textAlign = "center"; ctx.fillText("R.I.P", x + 40, y + 45); ctx.font = "12px Arial"; ctx.fillText("Clippy", x + 40, y + 65); }
     function drawMagnet(x, y) { ctx.shadowColor = '#f00'; ctx.shadowBlur = 10; ctx.strokeStyle = '#d00'; ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(x + 15, y + 15, 12, Math.PI, 0); ctx.stroke(); ctx.shadowBlur = 0; ctx.strokeStyle = '#eee'; ctx.beginPath(); ctx.moveTo(x + 3, y + 15); ctx.lineTo(x + 3, y + 20); ctx.moveTo(x + 27, y + 15); ctx.lineTo(x + 27, y + 20); ctx.stroke(); }
     function drawTrashy(x, y, distracted) { let hoverY = distracted ? y + Math.sin(time * 0.1) * 8 : y; ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 15; let grad = ctx.createLinearGradient(x, hoverY, x + 90, hoverY); grad.addColorStop(0, '#fff'); grad.addColorStop(0.3, '#ccc'); grad.addColorStop(1, '#555'); ctx.fillStyle = grad; ctx.beginPath(); ctx.moveTo(x + 10, hoverY + 90); ctx.lineTo(x + 80, hoverY + 90); ctx.lineTo(x + 90, hoverY + 20); ctx.lineTo(x, hoverY + 20); ctx.fill(); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; ctx.strokeStyle = '#777'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(x + 20, hoverY + 30); ctx.lineTo(x + 25, hoverY + 80); ctx.moveTo(x + 45, hoverY + 30); ctx.lineTo(x + 45, hoverY + 80); ctx.moveTo(x + 70, hoverY + 30); ctx.lineTo(x + 65, hoverY + 80); ctx.stroke(); ctx.fillStyle = '#444'; if (distracted) { ctx.beginPath(); ctx.moveTo(x - 5, hoverY + 15); ctx.lineTo(x + 85, hoverY - 20); ctx.lineTo(x + 90, hoverY); ctx.lineTo(x, hoverY + 20); ctx.fill(); } else { ctx.fillRect(x - 5, hoverY + 10, 100, 10); } }
@@ -179,7 +179,6 @@
     function drawGateway(x, y, open) { ctx.shadowColor = open ? '#0f0' : '#f00'; ctx.shadowBlur = 30; ctx.fillStyle = '#333'; ctx.fillRect(x, y, 120, 160); ctx.fillStyle = '#111'; ctx.fillRect(x + 10, y + 10, 100, 140); ctx.fillStyle = open ? '#052205' : '#220505'; ctx.fillRect(x + 15, y + 15, 90, 130); ctx.fillStyle = open ? '#0f0' : '#f00'; ctx.fillRect(x+30, y+40, 10, 80); ctx.fillRect(x+55, y+40, 10, 80); ctx.fillRect(x+80, y+40, 10, 80); ctx.shadowBlur = 0; }
     function drawLock(x, y, jammed) { ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 10; ctx.fillStyle = '#daa520'; ctx.fillRect(x, y + 10, 30, 25); if (!jammed) { ctx.strokeStyle = '#ccc'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x + 15, y + 10, 10, Math.PI, 0); ctx.stroke(); } else { ctx.strokeStyle = '#ccc'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(x + 5, y + 10); ctx.lineTo(x + 5, y + 2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x + 25, y + 10); ctx.lineTo(x + 20, y + 0); ctx.stroke(); ctx.strokeStyle = '#333'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y+20); ctx.lineTo(x+15, y+25); ctx.lineTo(x+30, y+15); ctx.stroke(); } ctx.shadowBlur = 0; }
     
-    // V3.0 Exact Button Aesthetics
     function drawMenuButton(txt, x, y, w, h, active, locked=false) {
         ctx.fillStyle = locked ? '#222' : (active ? '#006666' : '#333');
         ctx.fillRect(x, y, w, h);
@@ -332,8 +331,8 @@
         const x = mouseX; const y = mouseY;
 
         if (state.gameState === 'mainMenu') {
-            if (x > 300 && x < 500 && y > 250 && y < 300) { playSound('click'); resetGame(1); state.gameState = 'playing'; } 
-            else if (x > 300 && x < 500 && y > 330 && y < 380) { 
+            if (x > 300 && x < 500 && y > 270 && y < 320) { playSound('click'); resetGame(1); state.gameState = 'playing'; } 
+            else if (x > 300 && x < 500 && y > 340 && y < 390) { 
                 if (state.level2Unlocked) { playSound('click'); resetGame(2); state.gameState = 'playing'; } 
                 else { playSound('error'); }
             }
@@ -413,18 +412,36 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         if (state.gameState === 'mainMenu') {
-            // Main Menu Render V3.0
             ctx.fillStyle = '#050a15'; ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.strokeStyle = '#112'; ctx.lineWidth = 1; for(let i=0; i<800; i+=40){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,600); ctx.stroke(); } for(let i=0; i<600; i+=40){ ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(800,i); ctx.stroke(); }
             
-            ctx.fillStyle = '#0ff'; ctx.font = "bold 48px Courier New"; ctx.textAlign = "center"; ctx.shadowColor = '#0ff'; ctx.shadowBlur = 20; 
-            ctx.fillText("PaCA", 400, 120); ctx.shadowBlur = 0;
-
-            let hoverL1 = mouseX > 300 && mouseX < 500 && mouseY > 250 && mouseY < 300;
-            drawMenuButton("LEVEL 1", 300, 250, 200, 50, hoverL1);
+            // Stylized Title rendering
+            ctx.fillStyle = '#0ff'; ctx.font = "bold 70px Courier New"; ctx.textAlign = "center"; ctx.shadowColor = '#0ff'; ctx.shadowBlur = 25; 
+            ctx.fillText("PaCA", 400, 100); ctx.shadowBlur = 0;
             
-            let hoverL2 = mouseX > 300 && mouseX < 500 && mouseY > 330 && mouseY < 380;
-            drawMenuButton("LEVEL 2", 300, 330, 200, 50, hoverL2, !state.level2Unlocked);
+            ctx.fillStyle = '#fff'; ctx.font = "bold 22px Courier New"; 
+            ctx.fillText("A Point and Click Adventure Game", 400, 135);
+            
+            // Blinking format warning logic
+            if (Math.floor(time / 30) % 2 === 0) {
+                ctx.fillStyle = '#f00'; ctx.font = "bold 16px Courier New";
+                ctx.fillText(">> SYSTEM FORMAT IMMINENT <<", 400, 170);
+            } else {
+                ctx.fillStyle = '#a00'; ctx.font = "bold 16px Courier New";
+                ctx.fillText(">> SYSTEM FORMAT IMMINENT <<", 400, 170);
+            }
+
+            // Central Game Lore / Info block
+            ctx.fillStyle = '#aaa'; ctx.font = "14px Courier New";
+            ctx.fillText("You are a sentient pixel sprite trapped in volatile RAM.", 400, 195);
+            ctx.fillText("Solve logic puzzles, secure the bypass codes, and escape", 400, 215);
+            ctx.fillText("to the USB Gateway before your code is permanently wiped.", 400, 235);
+
+            let hoverL1 = mouseX > 300 && mouseX < 500 && mouseY > 270 && mouseY < 320;
+            drawMenuButton("LEVEL 1", 300, 270, 200, 50, hoverL1);
+            
+            let hoverL2 = mouseX > 300 && mouseX < 500 && mouseY > 340 && mouseY < 390;
+            drawMenuButton("LEVEL 2", 300, 340, 200, 50, hoverL2, !state.level2Unlocked);
 
             let hoverLB = mouseX > 300 && mouseX < 500 && mouseY > 410 && mouseY < 460;
             drawMenuButton("SCORES", 300, 410, 200, 50, hoverLB);
