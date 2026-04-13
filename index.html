@@ -330,6 +330,32 @@
     canvas.addEventListener('mousedown', () => {
         const x = mouseX; const y = mouseY;
 
+        // NAME ENTRY CLICKS (Touch UI)
+        if (state.gameState === 'nameEntry') {
+            for(let i=0; i<3; i++) {
+                let charX = 300 + (i * 100); let charY = 400;
+                
+                // Up Arrow Touch
+                if (x > charX-30 && x < charX+30 && y > charY-85 && y < charY-55) {
+                    state.activeCharIndex = i;
+                    state.nameChars[i] = (state.nameChars[i] + 1) % 26;
+                    playSound('click'); return;
+                }
+                
+                // Down Arrow Touch
+                if (x > charX-30 && x < charX+30 && y > charY+25 && y < charY+55) {
+                    state.activeCharIndex = i;
+                    state.nameChars[i] = (state.nameChars[i] - 1 + 26) % 26;
+                    playSound('click'); return;
+                }
+            }
+            // Save Button Touch
+            if (x > 300 && x < 500 && y > 500 && y < 550) {
+                saveScoreToCloud(); return;
+            }
+            return;
+        }
+
         if (state.gameState === 'mainMenu') {
             if (x > 300 && x < 500 && y > 270 && y < 320) { playSound('click'); resetGame(1); state.gameState = 'playing'; } 
             else if (x > 300 && x < 500 && y > 340 && y < 390) { 
@@ -383,7 +409,7 @@
         } else { if (state.verb === 'USE' && state.selectedItem) { showMessage("I can't use that there."); state.selectedItem = null; } }
     });
 
-    // --- LIGHTING & POST-PROCESSING (V3.0 STYLE) ---
+    // --- LIGHTING & POST-PROCESSING ---
     function drawVFXOverlay() {
         if (mouseY < 450 && state.gameState === 'playing') {
             ctx.globalCompositeOperation = 'overlay';
@@ -415,14 +441,12 @@
             ctx.fillStyle = '#050a15'; ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.strokeStyle = '#112'; ctx.lineWidth = 1; for(let i=0; i<800; i+=40){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,600); ctx.stroke(); } for(let i=0; i<600; i+=40){ ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(800,i); ctx.stroke(); }
             
-            // Stylized Title rendering
             ctx.fillStyle = '#0ff'; ctx.font = "bold 70px Courier New"; ctx.textAlign = "center"; ctx.shadowColor = '#0ff'; ctx.shadowBlur = 25; 
             ctx.fillText("PaCA", 400, 100); ctx.shadowBlur = 0;
             
             ctx.fillStyle = '#fff'; ctx.font = "bold 22px Courier New"; 
             ctx.fillText("A Point and Click Adventure Game", 400, 135);
             
-            // Blinking format warning logic
             if (Math.floor(time / 30) % 2 === 0) {
                 ctx.fillStyle = '#f00'; ctx.font = "bold 16px Courier New";
                 ctx.fillText(">> SYSTEM FORMAT IMMINENT <<", 400, 170);
@@ -431,7 +455,6 @@
                 ctx.fillText(">> SYSTEM FORMAT IMMINENT <<", 400, 170);
             }
 
-            // Central Game Lore / Info block
             ctx.fillStyle = '#aaa'; ctx.font = "14px Courier New";
             ctx.fillText("You are a sentient pixel sprite trapped in volatile RAM.", 400, 195);
             ctx.fillText("Solve logic puzzles, secure the bypass codes, and escape", 400, 215);
@@ -484,18 +507,30 @@
             ctx.fillText(state.currentLevel === 1 ? "FORMAT SEQUENCE AVOIDED" : "ESCAPE TO USB SUCCESSFUL", 400, 150);
             ctx.fillStyle = '#fff'; ctx.font = "20px Courier New"; ctx.shadowBlur = 0; 
             ctx.fillText(`LEVEL ${state.currentLevel} TIME: ${formatTime(state.elapsedTime)}`, 400, 200);
-            ctx.fillStyle = '#aaa'; ctx.font = "16px Courier New"; ctx.fillText("ENTER INITIALS (USE ARROW KEYS & ENTER)", 400, 300);
+            ctx.fillStyle = '#aaa'; ctx.font = "16px Courier New"; ctx.fillText("ENTER INITIALS", 400, 260);
             
             for(let i=0; i<3; i++) {
                 let charX = 300 + (i * 100); let charY = 400;
+                
+                // Active Box & Letter
                 ctx.strokeStyle = i === state.activeCharIndex ? '#0ff' : '#222'; ctx.lineWidth = 4; ctx.strokeRect(charX - 30, charY - 45, 60, 60);
                 ctx.fillStyle = i === state.activeCharIndex ? '#0ff' : '#fff'; ctx.font = "bold 48px Courier New"; ctx.fillText(ALPHABET[state.nameChars[i]], charX, charY);
-                if (i === state.activeCharIndex) {
-                    let bounce = Math.sin(time * 0.1) * 5; ctx.fillStyle = '#0ff';
-                    ctx.beginPath(); ctx.moveTo(charX, charY - 60 - bounce); ctx.lineTo(charX - 10, charY - 50 - bounce); ctx.lineTo(charX + 10, charY - 50 - bounce); ctx.fill();
-                    ctx.beginPath(); ctx.moveTo(charX, charY + 30 + bounce); ctx.lineTo(charX - 10, charY + 20 + bounce); ctx.lineTo(charX + 10, charY + 20 + bounce); ctx.fill();
-                }
+                
+                // Up Arrow
+                let hoverUp = mouseX > charX-30 && mouseX < charX+30 && mouseY > charY-85 && mouseY < charY-55;
+                ctx.fillStyle = hoverUp ? '#fff' : '#0ff';
+                ctx.beginPath(); ctx.moveTo(charX, charY - 80); ctx.lineTo(charX - 15, charY - 60); ctx.lineTo(charX + 15, charY - 60); ctx.fill();
+
+                // Down Arrow
+                let hoverDown = mouseX > charX-30 && mouseX < charX+30 && mouseY > charY+25 && mouseY < charY+55;
+                ctx.fillStyle = hoverDown ? '#fff' : '#0ff';
+                ctx.beginPath(); ctx.moveTo(charX, charY + 50); ctx.lineTo(charX - 15, charY + 30); ctx.lineTo(charX + 15, charY + 30); ctx.fill();
             }
+
+            // Save Score Button (Touch friendly)
+            let hoverSave = mouseX > 300 && mouseX < 500 && mouseY > 500 && mouseY < 550;
+            drawMenuButton("SAVE SCORE", 300, 500, 200, 50, hoverSave);
+
         } else if (state.gameState === 'leaderboard') {
             ctx.fillStyle = '#100505'; ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.strokeStyle = '#122'; ctx.lineWidth = 1; for(let i=0; i<800; i+=40){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,600); ctx.stroke(); } for(let i=0; i<600; i+=40){ ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(800,i); ctx.stroke(); }
