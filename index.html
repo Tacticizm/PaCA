@@ -8,15 +8,38 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <style>
         body { background-color: #020202; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: 'Courier New', Courier, monospace; overflow: hidden; }
-        canvas { background-color: #000; border: 8px solid #111; border-radius: 12px; box-shadow: 0 0 50px rgba(0, 255, 200, 0.2), inset 0 0 30px #000; cursor: none; }
+        #game-container { position: relative; width: 800px; height: 600px; }
+        canvas { 
+            background-color: #000; 
+            border: 8px solid #111; 
+            border-radius: 12px; 
+            box-shadow: 0 0 50px rgba(0, 255, 200, 0.2); 
+            cursor: none; 
+            display: block;
+            touch-action: none; /* Prevents scrolling on mobile/tablets */
+        }
+        /* Hidden real cursor fix */
+        #custom-cursor {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #0ff;
+            box-shadow: 0 0 10px #0ff;
+            pointer-events: none; /* CRITICAL: Allows clicks to pass through to the canvas */
+            z-index: 9999;
+            transform: translate(-50%, -50%);
+        }
     </style>
 </head>
 <body>
 
-<canvas id="gameCanvas" width="800" height="600"></canvas>
+<div id="game-container">
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="custom-cursor"></div>
+</div>
 
 <script>
-    // --- FIREBASE CONFIGURATION (WIRED) ---
+    // --- FIREBASE CONFIGURATION ---
     const firebaseConfig = {
         apiKey: "AIzaSyA_IgXMyoi-1wgevCSxQVRFoaKG0my5jXY",
         authDomain: "paca-382c1.firebaseapp.com",
@@ -28,50 +51,34 @@
         measurementId: "G-BTP61G9S2W"
     };
 
-    // Initialize Firebase
-    try {
-        firebase.initializeApp(firebaseConfig);
-    } catch(e) { console.error("Firebase init failed:", e); }
+    try { firebase.initializeApp(firebaseConfig); } catch(e) { console.error(e); }
     const database = firebase.database();
 
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    let time = 0; 
-    let mouseX = 400;
-    let mouseY = 300;
+    const cursorEl = document.getElementById('custom-cursor');
+    let time = 0, mouseX = 400, mouseY = 300;
     const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     // --- LEADERBOARD SYNC ---
-    let globalScoresL1 = [];
-    let globalScoresL2 = [];
-
+    let globalScoresL1 = [], globalScoresL2 = [];
     function syncLeaderboards() {
         database.ref('PaCA/scores/L1').orderByChild('time').limitToFirst(10).on('value', (s) => {
-            const data = s.val();
-            globalScoresL1 = data ? Object.values(data).sort((a,b) => a.time - b.time) : [];
+            const data = s.val(); globalScoresL1 = data ? Object.values(data).sort((a,b) => a.time - b.time) : [];
         });
         database.ref('PaCA/scores/L2').orderByChild('time').limitToFirst(10).on('value', (s) => {
-            const data = s.val();
-            globalScoresL2 = data ? Object.values(data).sort((a,b) => a.time - b.time) : [];
+            const data = s.val(); globalScoresL2 = data ? Object.values(data).sort((a,b) => a.time - b.time) : [];
         });
     }
     syncLeaderboards();
 
     function saveScoreToCloud() {
         let name = ALPHABET[state.nameChars[0]] + ALPHABET[state.nameChars[1]] + ALPHABET[state.nameChars[2]];
-        try {
-            database.ref(`PaCA/scores/L${state.currentLevel}`).push({
-                name: name,
-                time: state.elapsedTime,
-                timestamp: Date.now()
-            });
-        } catch(e) { console.warn("Cloud save failed."); }
-        state.leaderboardView = state.currentLevel;
-        state.gameState = 'leaderboard'; 
-        playSound('win');
+        try { database.ref(`PaCA/scores/L${state.currentLevel}`).push({ name: name, time: state.elapsedTime, timestamp: Date.now() }); } catch(e) {}
+        state.leaderboardView = state.currentLevel; state.gameState = 'leaderboard'; playSound('win');
     }
 
-    // --- VFX: PARTICLE SYSTEM ---
+    // --- AUDIO & VFX ---
     let particles = [];
     function createParticle(type, x, y) {
         if (type === 'fog') particles.push({ x: Math.random() * 800, y: 350 + Math.random() * 100, vx: (Math.random() - 0.5) * 0.5, vy: 0, life: Math.random() * 100, type: 'fog', size: 20 + Math.random() * 40 });
@@ -90,7 +97,6 @@
         if (state.room === 'taskmanager' && Math.random() < 0.3) createParticle('data');
         if (state.room === 'registry' && Math.random() < 0.1) createParticle('dust');
         if (state.room === 'usbport' && Math.random() < 0.4) createParticle('stream');
-
         for (let i = particles.length - 1; i >= 0; i--) {
             let p = particles[i]; p.x += p.vx; p.y += p.vy;
             if (p.type === 'fog') { p.life += 0.02; ctx.fillStyle = `rgba(0, 100, 100, ${Math.max(0, Math.sin(p.life) * 0.1)})`; ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.1, p.size), 0, Math.PI * 2); ctx.fill(); if (p.life > 100 || p.x < -50 || p.x > 850) particles.splice(i, 1); } 
@@ -102,20 +108,19 @@
         }
     }
 
-    // --- AUDIO SYSTEM ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playSound(type) {
         if (audioCtx.state === 'suspended') audioCtx.resume();
         const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
         osc.connect(gain); gain.connect(audioCtx.destination);
-        if (type === 'click') { osc.type = 'square'; osc.frequency.setValueAtTime(400, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1); gain.gain.setValueAtTime(0.1, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1); osc.start(); osc.stop(audioCtx.currentTime + 0.1); } 
-        else if (type === 'pickup') { osc.type = 'sine'; osc.frequency.setValueAtTime(600, audioCtx.currentTime); osc.frequency.setValueAtTime(800, audioCtx.currentTime + 0.1); gain.gain.setValueAtTime(0.1, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3); osc.start(); osc.stop(audioCtx.currentTime + 0.3); } 
-        else if (type === 'win') { osc.type = 'square'; osc.frequency.setValueAtTime(440, audioCtx.currentTime); osc.frequency.setValueAtTime(554, audioCtx.currentTime + 0.2); osc.frequency.setValueAtTime(659, audioCtx.currentTime + 0.4); gain.gain.setValueAtTime(0.2, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 1.0); osc.start(); osc.stop(audioCtx.currentTime + 1.0); } 
-        else if (type === 'smash') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(100, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + 0.3); gain.gain.setValueAtTime(0.3, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3); osc.start(); osc.stop(audioCtx.currentTime + 0.3); }
-        else if (type === 'error') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, audioCtx.currentTime); gain.gain.setValueAtTime(0.1, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2); osc.start(); osc.stop(audioCtx.currentTime + 0.2); }
+        if (type === 'click') { osc.type = 'square'; osc.frequency.setValueAtTime(400, audioCtx.currentTime); gain.gain.setValueAtTime(0.05, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.05); } 
+        else if (type === 'pickup') { osc.type = 'sine'; osc.frequency.setValueAtTime(600, audioCtx.currentTime); gain.gain.setValueAtTime(0.1, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.2); } 
+        else if (type === 'win') { osc.type = 'square'; osc.frequency.setValueAtTime(440, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.5); } 
+        else if (type === 'smash') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(100, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.3); }
+        else if (type === 'error') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.2); }
     }
 
-    // --- GAME STATE ---
+    // --- GAME ENGINE ---
     const state = {
         gameState: 'mainMenu', currentLevel: 1, leaderboardView: 1,
         level2Unlocked: localStorage.getItem('PaCA_L2Unlocked') === 'true',
@@ -127,119 +132,130 @@
     function resetGame(level) {
         state.currentLevel = level; state.room = level === 1 ? 'desktop' : 'taskmanager';
         state.verb = 'LOOK'; state.selectedItem = null; state.inventory = []; state.dialogue = null;
-        state.message = level === 1 ? "PaCA L1: Avoid the format." : "PaCA L2: RAM escape sequence."; 
+        state.message = level === 1 ? "Avoid the format." : "RAM escape sequence."; 
         state.messageTimer = 180; state.timerRunning = false; state.startTime = 0; state.elapsedTime = 0; state.nameChars = [0, 0, 0]; state.activeCharIndex = 0; particles = [];
         state.flags = { magnetTaken: false, trashyDistracted: false, cableTaken: false, cookieTaken: false, trollFed: false, folderUnlocked: false, powerRestored: false, hammerTaken: false, floppyTaken: false, ghostAppeased: false, keyTaken: false, lockJammed: false, gameWon: false };
     }
 
     function showMessage(msg) { state.message = msg; state.messageTimer = 180; }
 
-    // --- DRAWING PRIMITIVES ---
-    function drawGrave(x, y) { ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 15; ctx.shadowOffsetY = 10; let grad = ctx.createLinearGradient(x, y, x, y + 80); grad.addColorStop(0, '#9a9a9a'); grad.addColorStop(1, '#333'); ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x + 40, y + 30, 40, Math.PI, 0); ctx.lineTo(x + 80, y + 80); ctx.lineTo(x, y + 80); ctx.fill(); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; ctx.fillStyle = '#111'; ctx.font = "bold 16px Arial"; ctx.textAlign = "center"; ctx.fillText("R.I.P", x + 40, y + 45); ctx.font = "12px Arial"; ctx.fillText("Clippy", x + 40, y + 65); }
-    function drawMagnet(x, y) { ctx.shadowColor = '#f00'; ctx.shadowBlur = 10; ctx.strokeStyle = '#d00'; ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(x + 15, y + 15, 12, Math.PI, 0); ctx.stroke(); ctx.shadowBlur = 0; ctx.strokeStyle = '#eee'; ctx.beginPath(); ctx.moveTo(x + 3, y + 15); ctx.lineTo(x + 3, y + 20); ctx.moveTo(x + 27, y + 15); ctx.lineTo(x + 27, y + 20); ctx.stroke(); }
-    function drawTrashy(x, y, distracted) { let hoverY = distracted ? y + Math.sin(time * 0.1) * 8 : y; ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 15; let grad = ctx.createLinearGradient(x, hoverY, x + 90, hoverY); grad.addColorStop(0, '#fff'); grad.addColorStop(0.3, '#ccc'); grad.addColorStop(1, '#555'); ctx.fillStyle = grad; ctx.beginPath(); ctx.moveTo(x + 10, hoverY + 90); ctx.lineTo(x + 80, hoverY + 90); ctx.lineTo(x + 90, hoverY + 20); ctx.lineTo(x, hoverY + 20); ctx.fill(); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; ctx.strokeStyle = '#777'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(x + 20, hoverY + 30); ctx.lineTo(x + 25, hoverY + 80); ctx.moveTo(x + 45, hoverY + 30); ctx.lineTo(x + 45, hoverY + 80); ctx.moveTo(x + 70, hoverY + 30); ctx.lineTo(x + 65, hoverY + 80); ctx.stroke(); ctx.fillStyle = '#444'; if (distracted) { ctx.beginPath(); ctx.moveTo(x - 5, hoverY + 15); ctx.lineTo(x + 85, hoverY - 20); ctx.lineTo(x + 90, hoverY); ctx.lineTo(x, hoverY + 20); ctx.fill(); } else { ctx.fillRect(x - 5, hoverY + 10, 100, 10); } }
-    function drawFolder(x, y, open) { ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 5; ctx.fillStyle = '#c9962a'; ctx.fillRect(x, y + 10, 80, 50); if (open) { ctx.fillStyle = '#ffe7a0'; ctx.beginPath(); ctx.moveTo(x - 10, y + 60); ctx.lineTo(x + 10, y + 25); ctx.lineTo(x + 90, y + 25); ctx.lineTo(x + 70, y + 60); ctx.fill(); } else { ctx.fillRect(x, y, 30, 15); ctx.fillStyle = '#f5c04f'; ctx.fillRect(x, y + 15, 80, 45); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; ctx.fillStyle = '#222'; ctx.fillRect(x + 30, y + 35, 20, 15); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x + 40, y + 35, 6, Math.PI, 0); ctx.stroke(); } ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; }
-    function drawTroll(x, y) { let bounceY = y + Math.abs(Math.sin(time * 0.08)) * 5; ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 15; ctx.shadowOffsetY = 10; ctx.fillStyle = '#1c3b18'; ctx.beginPath(); ctx.arc(x + 45, bounceY + 50, 40, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; let bodyGrad = ctx.createRadialGradient(x + 30, bounceY + 30, 5, x + 45, bounceY + 50, 40); bodyGrad.addColorStop(0, '#418536'); bodyGrad.addColorStop(1, '#1c3b18'); ctx.fillStyle = bodyGrad; ctx.beginPath(); ctx.arc(x + 45, bounceY + 50, 40, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(x + 45, bounceY + 20, 30, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.moveTo(x + 20, bounceY + 10); ctx.lineTo(x - 10, bounceY); ctx.lineTo(x + 15, bounceY + 30); ctx.fill(); ctx.beginPath(); ctx.moveTo(x + 70, bounceY + 10); ctx.lineTo(x + 100, bounceY); ctx.lineTo(x + 75, bounceY + 30); ctx.fill(); ctx.shadowColor = '#0f0'; ctx.shadowBlur = 10; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x + 35, bounceY + 15, 8, 0, Math.PI * 2); ctx.arc(x + 55, bounceY + 15, 8, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#f00'; ctx.beginPath(); ctx.arc(x + 35, bounceY + 15, 3, 0, Math.PI * 2); ctx.arc(x + 55, bounceY + 15, 3, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0; }
-    function drawCookie(x, y) { ctx.fillStyle = '#cda869'; ctx.beginPath(); ctx.arc(x + 15, y + 15, 12, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#4a3000'; ctx.fillRect(x + 8, y + 10, 3, 3); ctx.fillRect(x + 18, y + 15, 4, 3); ctx.fillRect(x + 12, y + 20, 3, 3); ctx.fillRect(x + 20, y + 8, 3, 3); }
-    function drawCable(x, y) { ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 5; ctx.strokeStyle = '#050505'; ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x + 5, y + 5); ctx.quadraticCurveTo(x + 25, y - 10, x + 25, y + 25); ctx.stroke(); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; ctx.fillStyle = '#ddd'; ctx.fillRect(x + 22, y + 25, 6, 10); }
-    function drawGoldKey(x, y) { ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 15; ctx.fillStyle = '#ffd700'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x + 10, y + 10, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillRect(x + 8, y + 15, 4, 15); ctx.fillRect(x + 12, y + 22, 6, 3); ctx.fillRect(x + 12, y + 27, 4, 3); ctx.shadowBlur = 0; }
-    function drawRootKey(x, y) { ctx.shadowColor = '#0f0'; ctx.shadowBlur = 15; ctx.fillStyle = '#5f5'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x + 10, y + 10, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillRect(x + 8, y + 15, 4, 15); ctx.fillRect(x + 12, y + 22, 6, 3); ctx.fillRect(x + 12, y + 27, 4, 3); ctx.shadowBlur = 0; }
-    function drawHammer(x, y) { ctx.shadowColor = '#000'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 5; ctx.fillStyle = '#6b4423'; ctx.fillRect(x + 15, y + 15, 10, 30); ctx.fillStyle = '#888'; ctx.fillRect(x + 5, y + 5, 30, 15); ctx.fillStyle = '#bbb'; ctx.fillRect(x + 5, y + 5, 30, 5); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; }
-    function drawFloppy(x, y) { ctx.shadowColor = '#000'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 5; ctx.fillStyle = '#22e'; ctx.fillRect(x + 5, y + 5, 30, 30); ctx.fillStyle = '#ccc'; ctx.fillRect(x + 12, y + 5, 16, 12); ctx.fillStyle = '#fff'; ctx.fillRect(x + 10, y + 20, 20, 10); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; }
-    function drawGhost(x, y) { let floatY = y + Math.sin(time * 0.05) * 10; ctx.shadowColor = 'rgba(0, 255, 255, 0.8)'; ctx.shadowBlur = 20; ctx.fillStyle = 'rgba(220, 230, 255, 0.7)'; ctx.beginPath(); ctx.arc(x + 30, floatY + 20, 20, Math.PI, 0); ctx.lineTo(x + 50, floatY + 60); ctx.lineTo(x + 40, floatY + 50); ctx.lineTo(x + 30, floatY + 60); ctx.lineTo(x + 20, floatY + 50); ctx.lineTo(x + 10, floatY + 60); ctx.lineTo(x + 10, floatY + 20); ctx.fill(); ctx.shadowBlur = 0; ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(x + 22, floatY + 20, 6, 0, Math.PI*2); ctx.arc(x + 38, floatY + 20, 6, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(x + 22, floatY + 20, 2, 0, Math.PI*2); ctx.arc(x + 38, floatY + 20, 2, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x+30, floatY+35, 10, 0, Math.PI); ctx.stroke(); }
-    function drawGateway(x, y, open) { ctx.shadowColor = open ? '#0f0' : '#f00'; ctx.shadowBlur = 30; ctx.fillStyle = '#333'; ctx.fillRect(x, y, 120, 160); ctx.fillStyle = '#111'; ctx.fillRect(x + 10, y + 10, 100, 140); ctx.fillStyle = open ? '#052205' : '#220505'; ctx.fillRect(x + 15, y + 15, 90, 130); ctx.fillStyle = open ? '#0f0' : '#f00'; ctx.fillRect(x+30, y+40, 10, 80); ctx.fillRect(x+55, y+40, 10, 80); ctx.fillRect(x+80, y+40, 10, 80); ctx.shadowBlur = 0; }
-    function drawLock(x, y, jammed) { ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 10; ctx.fillStyle = '#daa520'; ctx.fillRect(x, y + 10, 30, 25); if (!jammed) { ctx.strokeStyle = '#ccc'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x + 15, y + 10, 10, Math.PI, 0); ctx.stroke(); } else { ctx.strokeStyle = '#ccc'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(x + 5, y + 10); ctx.lineTo(x + 5, y + 2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x + 25, y + 10); ctx.lineTo(x + 20, y + 0); ctx.stroke(); ctx.strokeStyle = '#333'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y+20); ctx.lineTo(x+15, y+25); ctx.lineTo(x+30, y+15); ctx.stroke(); } ctx.shadowBlur = 0; }
-    function drawMenuButton(txt, x, y, w, h, active, locked=false) { ctx.fillStyle = locked ? '#222' : (active ? '#006666' : '#333'); ctx.fillRect(x, y, w, h); ctx.strokeStyle = locked ? '#111' : (active ? '#0ff' : '#555'); ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h); ctx.fillStyle = locked ? '#555' : (active ? '#fff' : '#ccc'); ctx.font = "bold 20px Courier New"; ctx.textAlign = "center"; ctx.fillText(locked ? "LOCKED" : txt, x + w/2, y + h/2 + 7); }
-    function drawButton(txt, x, y, active) { let grad = ctx.createLinearGradient(x, y, x, y + 30); grad.addColorStop(0, active ? '#008888' : '#555'); grad.addColorStop(1, active ? '#004444' : '#222'); ctx.fillStyle = grad; ctx.fillRect(x, y, 100, 30); ctx.strokeStyle = active ? '#0ff' : '#111'; ctx.lineWidth = 2; ctx.strokeRect(x, y, 100, 30); ctx.fillStyle = active ? '#fff' : '#ccc'; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.fillText(txt, x + 50, y + 20); }
+    // --- DRAWING ASSETS ---
+    function drawGrave(x, y) { ctx.fillStyle = '#666'; ctx.beginPath(); ctx.arc(x + 40, y + 30, 40, Math.PI, 0); ctx.lineTo(x + 80, y + 80); ctx.lineTo(x, y + 80); ctx.fill(); ctx.fillStyle = '#111'; ctx.font = "bold 16px Arial"; ctx.textAlign = "center"; ctx.fillText("R.I.P", x + 40, y + 45); }
+    function drawMagnet(x, y) { ctx.strokeStyle = '#d00'; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(x + 15, y + 15, 12, Math.PI, 0); ctx.stroke(); }
+    function drawTrashy(x, y, dis) { let hover = dis ? Math.sin(time*0.1)*8 : 0; ctx.fillStyle = '#888'; ctx.fillRect(x, y+20+hover, 90, 70); ctx.fillStyle = '#444'; ctx.fillRect(x-5, y+10+hover, 100, 10); }
+    function drawFolder(x, y, opn) { ctx.fillStyle = opn ? '#ffe7a0' : '#c9962a'; ctx.fillRect(x, y+10, 80, 50); }
+    function drawTroll(x, y) { ctx.fillStyle = '#1c3b18'; ctx.beginPath(); ctx.arc(x+45, y+45, 40, 0, Math.PI*2); ctx.fill(); }
+    function drawGoldKey(x, y) { ctx.fillStyle = '#ffd700'; ctx.fillRect(x+8, y+5, 15, 25); }
+    function drawRootKey(x, y) { ctx.fillStyle = '#5f5'; ctx.fillRect(x+8, y+5, 15, 25); }
+    function drawHammer(x, y) { ctx.fillStyle = '#6b4423'; ctx.fillRect(x+15, y+15, 10, 30); ctx.fillStyle = '#888'; ctx.fillRect(x+5, y+5, 30, 15); }
+    function drawFloppy(x, y) { ctx.fillStyle = '#22e'; ctx.fillRect(x+5, y+5, 30, 30); }
+    function drawGhost(x, y) { let float = Math.sin(time*0.05)*10; ctx.fillStyle = 'rgba(220, 230, 255, 0.7)'; ctx.beginPath(); ctx.arc(x+30, y+20+float, 20, Math.PI, 0); ctx.lineTo(x+50, y+60+float); ctx.lineTo(x+10, y+60+float); ctx.fill(); }
+    function drawGateway(x, y, opn) { ctx.fillStyle = opn ? '#052205' : '#220505'; ctx.fillRect(x, y, 120, 160); }
+    function drawLock(x, y, jam) { ctx.fillStyle = '#daa520'; ctx.fillRect(x, y+10, 30, 25); }
+    function drawMenuButton(txt, x, y, w, h, active, locked=false) { ctx.fillStyle = locked ? '#222' : (active ? '#006666' : '#333'); ctx.fillRect(x, y, w, h); ctx.fillStyle = locked ? '#555' : (active ? '#fff' : '#ccc'); ctx.font = "bold 20px Courier New"; ctx.textAlign = "center"; ctx.fillText(locked ? "LOCKED" : txt, x + w/2, y + h/2 + 7); }
+    function drawButton(txt, x, y, active) { ctx.fillStyle = active ? '#004444' : '#222'; ctx.fillRect(x, y, 100, 30); ctx.fillStyle = active ? '#fff' : '#ccc'; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.fillText(txt, x + 50, y + 20); }
 
-    // --- ROOMS DATA ---
+    // --- ROOMS ---
     const rooms = {
         desktop: {
-            draw: () => {
-                let bg = ctx.createRadialGradient(400, 225, 0, 400, 225, 600); bg.addColorStop(0, '#004040'); bg.addColorStop(1, '#001111'); ctx.fillStyle = bg; ctx.fillRect(0, 0, 800, 450);
-                drawGrave(100, 300); if (!state.flags.magnetTaken) drawMagnet(140, 360); 
-                drawTrashy(600, 270, state.flags.trashyDistracted); if (state.flags.trashyDistracted && !state.flags.cableTaken) drawCable(630, 230);
-                drawFolder(350, 150, state.flags.folderUnlocked); ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.textAlign="center"; ctx.fillText("TOP_SECRET.dir", 390, 230);
-                ctx.fillStyle = '#0a0a2a'; ctx.fillRect(700, 50, 80, 50); ctx.strokeStyle = '#2a2a6a'; ctx.strokeRect(700, 50, 80, 50); ctx.fillStyle = "#fff"; ctx.font = "12px Arial"; ctx.fillText("BROWSER", 740, 80);
-            },
+            draw: () => { ctx.fillStyle = '#001111'; ctx.fillRect(0,0,800,450); drawGrave(100, 300); if(!state.flags.magnetTaken) drawMagnet(140, 360); drawTrashy(600, 270, state.flags.trashyDistracted); if(state.flags.trashyDistracted && !state.flags.cableTaken) ctx.fillRect(630, 230, 10, 30); drawFolder(350, 150, state.flags.folderUnlocked); },
             hotspots: [
-                { x: 100, y: 300, w: 80, h: 80, name: "Grave", onLook: () => showMessage("Clippy's tombstone. Magnet attached."), onPickUp: () => { if (!state.flags.magnetTaken) { state.flags.magnetTaken = true; state.inventory.push({id: 'magnet', name: 'Magnet', drawIcon: drawMagnet}); playSound('pickup'); showMessage("Got magnet."); } } },
-                { x: 600, y: 270, w: 90, h: 90, name: "Trashy", onTalk: () => { if (!state.flags.trashyDistracted) { state.dialogue = { text: "Trashy: My cache! Mine!", options: [{text:"OK.", action:()=>state.dialogue=null}] }; } }, onPickUp: () => { if (state.flags.trashyDistracted && !state.flags.cableTaken) { state.flags.cableTaken = true; state.inventory.push({id: 'cable', name: 'Cable', drawIcon: drawCable}); playSound('pickup'); showMessage("Got cable."); } }, onUse: (i) => { if (i === 'magnet') { state.flags.trashyDistracted = true; playSound('click'); showMessage("Trashy glitched out!"); } } },
-                { x: 350, y: 150, w: 80, h: 60, name: "Folder", onPickUp: () => { if (state.flags.folderUnlocked && !state.inventory.some(i=>i.id==='code')) { state.inventory.push({id: 'code', name: 'Code', drawIcon: null, textCode: '1234'}); playSound('pickup'); showMessage("Got reboot code."); } }, onUse: (i) => { if (i === 'key' && !state.flags.folderUnlocked) { state.flags.folderUnlocked = true; playSound('click'); showMessage("Folder unlocked."); } } },
-                { x: 700, y: 50, w: 80, h: 50, name: "Door", onUse: () => { playSound('click'); state.room = 'browser'; showMessage("Entered Browser."); } }
+                { x: 100, y: 300, w: 80, h: 80, onUse: () => { if(!state.flags.magnetTaken) { state.flags.magnetTaken = true; state.inventory.push({id: 'magnet', name: 'Magnet', drawIcon: drawMagnet}); playSound('pickup'); } } },
+                { x: 600, y: 270, w: 90, h: 90, onUse: (i) => { if(i==='magnet') { state.flags.trashyDistracted=true; playSound('click'); } else if(state.flags.trashyDistracted && !state.flags.cableTaken) { state.flags.cableTaken=true; state.inventory.push({id: 'cable', name: 'Cable', drawIcon: drawMagnet}); playSound('pickup'); } } },
+                { x: 350, y: 150, w: 80, h: 60, onUse: (i) => { if(i==='key' && !state.flags.folderUnlocked) { state.flags.folderUnlocked=true; playSound('click'); } else if(state.flags.folderUnlocked && !state.inventory.some(it=>it.id==='code')) { state.inventory.push({id: 'code', name: 'Code', textCode: '1234'}); playSound('pickup'); } } },
+                { x: 700, y: 50, w: 80, h: 50, name: 'Door', onUse: () => { state.room = 'browser'; } }
             ]
         },
         browser: {
-            draw: () => {
-                ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, 800, 450); ctx.fillStyle = '#ccc'; ctx.fillRect(40, 40, 720, 380);
-                let bar = ctx.createLinearGradient(40, 40, 760, 40); bar.addColorStop(0, '#000040'); bar.addColorStop(1, '#0055aa'); ctx.fillStyle = bar; ctx.fillRect(40, 40, 720, 30);
-                ctx.fillStyle = '#fff'; ctx.fillRect(200, 120, 400, 40); ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("Search: 'Escape'", 210, 145);
-                drawTroll(350, 250); if (!state.flags.trollFed) drawGoldKey(400, 320); 
-                ctx.fillStyle = '#444'; ctx.fillRect(10, 10, 80, 25); ctx.fillStyle = "#fff"; ctx.textAlign="center"; ctx.fillText("<-BACK", 50, 27); ctx.fillStyle = '#600000'; ctx.fillRect(710, 10, 80, 25); ctx.fillStyle = "#fff"; ctx.fillText("CORE->", 750, 27);
-            },
+            draw: () => { ctx.fillStyle = '#ccc'; ctx.fillRect(40, 40, 720, 380); drawTroll(350, 250); if(!state.flags.trollFed) drawGoldKey(400, 320); },
             hotspots: [
-                { x: 200, y: 120, w: 400, h: 40, name: "Search", onUse: () => { if (!state.flags.cookieTaken) { state.flags.cookieTaken = true; state.inventory.push({id: 'cookie', name: 'Cookie', drawIcon: drawCookie}); playSound('pickup'); showMessage("Got a cookie."); } } },
-                { x: 350, y: 250, w: 90, h: 90, name: "Troll", onTalk: () => { if (!state.flags.trollFed) state.dialogue = { text: "Troll: FEED ME!", options: [{text:"OK", action:()=>state.dialogue=null}] }; }, onPickUp: () => { if (state.flags.trollFed && !state.inventory.some(i=>i.id==='key')) { state.inventory.push({id: 'key', name: 'Key', drawIcon: drawGoldKey}); playSound('pickup'); showMessage("Got Key."); } }, onUse: (i) => { if (i === 'cookie') { state.flags.trollFed = true; state.inventory = state.inventory.filter(it=>it.id!=='cookie'); playSound('click'); showMessage("Troll eating."); } } },
-                { x: 10, y: 10, w: 80, h: 25, name: "Door", onUse: () => { state.room = 'desktop'; } },
-                { x: 710, y: 10, w: 80, h: 25, name: "Door", onUse: () => { state.room = 'mainframe'; } }
+                { x: 200, y: 120, w: 400, h: 40, onUse: () => { if(!state.flags.cookieTaken) { state.flags.cookieTaken=true; state.inventory.push({id: 'cookie', name: 'Cookie', drawIcon: drawFloppy}); playSound('pickup'); } } },
+                { x: 350, y: 250, w: 90, h: 90, onUse: (i) => { if(i==='cookie') { state.flags.trollFed=true; state.inventory = state.inventory.filter(it=>it.id!=='cookie'); playSound('click'); } else if(state.flags.trollFed && !state.inventory.some(it=>it.id==='key')) { state.inventory.push({id: 'key', name: 'Key', drawIcon: drawGoldKey}); playSound('pickup'); } } },
+                { x: 10, y: 10, w: 80, h: 25, name: 'Door', onUse: () => { state.room = 'desktop'; } },
+                { x: 710, y: 10, w: 80, h: 25, name: 'Door', onUse: () => { state.room = 'mainframe'; } }
             ]
         },
         mainframe: {
-            draw: () => {
-                let pulse = Math.abs(Math.sin(time * 0.05)) * 30; let bg = ctx.createRadialGradient(400, 225, Math.max(1, 20 + pulse), 400, 225, 450); bg.addColorStop(0, '#600'); bg.addColorStop(1, '#050000'); ctx.fillStyle = bg; ctx.fillRect(0, 0, 800, 450);
-                ctx.fillStyle = '#111'; ctx.fillRect(300, 150, 200, 200); ctx.fillStyle = state.flags.powerRestored ? '#001a00' : '#000'; ctx.fillRect(320, 170, 160, 80);
-                if (state.flags.powerRestored) { ctx.fillStyle = '#0f0'; ctx.textAlign="center"; ctx.fillText("READY", 400, 210); }
-                ctx.fillStyle = '#333'; ctx.fillRect(550, 300, 50, 50); if (state.flags.powerRestored) drawCable(565, 315);
-                ctx.fillStyle = '#444'; ctx.fillRect(20, 50, 80, 40); ctx.fillStyle = '#fff'; ctx.textAlign="center"; ctx.fillText("<-BACK", 60, 75);
-            },
+            draw: () => { ctx.fillStyle = '#050000'; ctx.fillRect(0,0,800,450); ctx.fillStyle='#111'; ctx.fillRect(300,150,200,200); if(state.flags.powerRestored) { ctx.fillStyle='#0f0'; ctx.fillRect(320,170,160,80); } },
             hotspots: [
-                { x: 300, y: 150, w: 200, h: 200, name: "Console", onUse: (i) => { if (state.flags.powerRestored && i === 'code') { state.flags.gameWon = true; state.timerRunning = false; state.level2Unlocked = true; try { localStorage.setItem('PaCA_L2Unlocked', 'true'); } catch(e){} state.gameState = 'nameEntry'; } } },
-                { x: 550, y: 300, w: 50, h: 50, name: "Socket", onUse: (i) => { if (i === 'cable') { state.flags.powerRestored = true; state.inventory = state.inventory.filter(it=>it.id!=='cable'); playSound('click'); } } },
-                { x: 20, y: 50, w: 80, h: 40, name: "Door", onUse: () => { state.room = 'browser'; } }
+                { x: 300, y: 150, w: 200, h: 200, onUse: (i) => { if(state.flags.powerRestored && i==='code') { state.flags.gameWon=true; state.timerRunning=false; state.level2Unlocked=true; localStorage.setItem('PaCA_L2Unlocked', 'true'); state.gameState='nameEntry'; } } },
+                { x: 550, y: 300, w: 50, h: 50, onUse: (i) => { if(i==='cable') { state.flags.powerRestored=true; state.inventory=state.inventory.filter(it=>it.id!=='cable'); playSound('click'); } } },
+                { x: 20, y: 50, w: 80, h: 40, name: 'Door', onUse: () => { state.room = 'browser'; } }
             ]
         },
         taskmanager: {
-            draw: () => {
-                let bg = ctx.createRadialGradient(400, 225, 0, 400, 225, 600); bg.addColorStop(0, '#003300'); bg.addColorStop(1, '#001100'); ctx.fillStyle = bg; ctx.fillRect(0, 0, 800, 450);
-                if (!state.flags.hammerTaken) drawHammer(200, 220); if (!state.flags.floppyTaken) drawFloppy(450, 305);
-                ctx.fillStyle = '#2a0a2a'; ctx.fillRect(700, 50, 80, 50); ctx.fillStyle = "#fff"; ctx.textAlign="center"; ctx.fillText("REGISTRY", 740, 80);
-            },
+            draw: () => { ctx.fillStyle = '#001100'; ctx.fillRect(0,0,800,450); if(!state.flags.hammerTaken) drawHammer(200, 220); if(!state.flags.floppyTaken) drawFloppy(450, 305); },
             hotspots: [
-                { x: 200, y: 220, w: 40, h: 40, name: "Hammer", onPickUp: () => { if (!state.flags.hammerTaken) { state.flags.hammerTaken = true; state.inventory.push({id: 'hammer', name: 'Hammer', drawIcon: drawHammer}); playSound('pickup'); } } },
-                { x: 450, y: 305, w: 40, h: 40, name: "Floppy", onPickUp: () => { if (!state.flags.floppyTaken) { state.flags.floppyTaken = true; state.inventory.push({id: 'floppy', name: 'Floppy', drawIcon: drawFloppy}); playSound('pickup'); } } },
-                { x: 700, y: 50, w: 80, h: 50, name: "Door", onUse: () => { state.room = 'registry'; } }
+                { x: 200, y: 220, w: 40, h: 40, onUse: () => { if(!state.flags.hammerTaken) { state.flags.hammerTaken=true; state.inventory.push({id: 'hammer', name: 'Hammer', drawIcon: drawHammer}); playSound('pickup'); } } },
+                { x: 450, y: 305, w: 40, h: 40, onUse: () => { if(!state.flags.floppyTaken) { state.flags.floppyTaken=true; state.inventory.push({id: 'floppy', name: 'Floppy', drawIcon: drawFloppy}); playSound('pickup'); } } },
+                { x: 700, y: 50, w: 80, h: 50, name: 'Door', onUse: () => { state.room = 'registry'; } }
             ]
         },
         registry: {
-            draw: () => {
-                let bg = ctx.createRadialGradient(400, 225, 0, 400, 225, 600); bg.addColorStop(0, '#2a0040'); bg.addColorStop(1, '#0a0011'); ctx.fillStyle = bg; ctx.fillRect(0, 0, 800, 450);
-                if (!state.flags.ghostAppeased) drawGhost(350, 200); if (state.flags.ghostAppeased && !state.flags.keyTaken) drawRootKey(360, 280); 
-                ctx.fillStyle = '#444'; ctx.fillRect(10, 10, 80, 25); ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.fillText("<-TASKS", 50, 27); ctx.fillStyle='#000060'; ctx.fillRect(710,10,80,25); ctx.fillText("USB->", 750, 27);
-            },
+            draw: () => { ctx.fillStyle = '#0a0011'; ctx.fillRect(0,0,800,450); if(!state.flags.ghostAppeased) drawGhost(350, 200); if(state.flags.ghostAppeased && !state.flags.keyTaken) drawRootKey(360, 280); },
             hotspots: [
-                { x: 350, y: 200, w: 60, h: 60, name: "Ghost", onUse: (i) => { if (i === 'floppy') { state.flags.ghostAppeased = true; state.inventory = state.inventory.filter(it=>it.id!=='floppy'); playSound('win'); } } },
-                { x: 360, y: 280, w: 40, h: 40, name: "Key", onPickUp: () => { if (state.flags.ghostAppeased && !state.flags.keyTaken) { state.flags.keyTaken = true; state.inventory.push({id: 'rootkey', name: 'Root Key', drawIcon: drawRootKey}); playSound('pickup'); } } },
-                { x: 10, y: 10, w: 80, h: 25, name: "Door", onUse: () => { state.room = 'taskmanager'; } },
-                { x: 710, y: 10, w: 80, h: 25, name: "Door", onUse: () => { state.room = 'usbport'; } }
+                { x: 350, y: 200, w: 60, h: 60, onUse: (i) => { if(i==='floppy') { state.flags.ghostAppeased=true; state.inventory=state.inventory.filter(it=>it.id!=='floppy'); playSound('win'); } } },
+                { x: 360, y: 280, w: 40, h: 40, onUse: () => { if(state.flags.ghostAppeased && !state.flags.keyTaken) { state.flags.keyTaken=true; state.inventory.push({id: 'rootkey', name: 'RootKey', drawIcon: drawRootKey}); playSound('pickup'); } } },
+                { x: 10, y: 10, w: 80, h: 25, name: 'Door', onUse: () => { state.room = 'taskmanager'; } },
+                { x: 710, y: 10, w: 80, h: 25, name: 'Door', onUse: () => { state.room = 'usbport'; } }
             ]
         },
         usbport: {
-            draw: () => {
-                ctx.fillStyle = '#000011'; ctx.fillRect(0, 0, 800, 450); drawGateway(340, 140, state.flags.gameWon);
-                if (!state.flags.gameWon) drawLock(385, 200, state.flags.lockJammed);
-                ctx.fillStyle='#444'; ctx.fillRect(20,50,80,40); ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.fillText("<-BACK", 60, 75);
-            },
+            draw: () => { ctx.fillStyle = '#000011'; ctx.fillRect(0,0,800,450); drawGateway(340, 140, state.flags.gameWon); if(!state.flags.gameWon) drawLock(385, 200, state.flags.lockJammed); },
             hotspots: [
-                { x: 385, y: 200, w: 30, h: 35, name: "Lock", onUse: (i) => { 
-                    if (i === 'rootkey') { state.flags.lockJammed = true; state.inventory = state.inventory.filter(it=>it.id!=='rootkey'); playSound('error'); }
-                    else if (i === 'hammer' && state.flags.lockJammed) { state.flags.gameWon = true; state.timerRunning = false; playSound('smash'); setTimeout(() => { state.gameState = 'nameEntry'; }, 1500); }
-                } },
-                { x: 20, y: 50, w: 80, h: 40, name: "Door", onUse: () => { state.room = 'registry'; } }
+                { x: 385, y: 200, w: 30, h: 35, onUse: (i) => { if(i==='rootkey') { state.flags.lockJammed=true; state.inventory=state.inventory.filter(it=>it.id!=='rootkey'); playSound('error'); } else if(i==='hammer' && state.flags.lockJammed) { state.flags.gameWon=true; state.timerRunning=false; playSound('smash'); setTimeout(()=>{state.gameState='nameEntry';},1500); } } },
+                { x: 20, y: 50, w: 80, h: 40, name: 'Door', onUse: () => { state.room = 'registry'; } }
             ]
         }
     };
 
-    // --- INPUTS ---
+    // --- INPUTS (FIXED FOR GITHUB) ---
+    window.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        mouseX = (e.clientX - rect.left) * scaleX;
+        mouseY = (e.clientY - rect.top) * scaleY;
+        // Move the visual cursor div
+        cursorEl.style.left = e.clientX + 'px';
+        cursorEl.style.top = e.clientY + 'px';
+    });
+
+    window.addEventListener('mousedown', (e) => {
+        const x = mouseX, y = mouseY;
+        if (state.gameState === 'mainMenu') {
+            if (x > 300 && x < 500 && y > 250 && y < 300) { resetGame(1); state.gameState = 'playing'; }
+            else if (x > 300 && x < 500 && y > 330 && y < 380 && state.level2Unlocked) { resetGame(2); state.gameState = 'playing'; }
+            else if (x > 300 && x < 500 && y > 410 && y < 460) state.gameState = 'leaderboard';
+            playSound('click');
+        } else if (state.gameState === 'leaderboard') {
+            if (x > 250 && x < 350 && y > 130 && y < 160) state.leaderboardView = 1;
+            else if (x > 450 && x < 550 && y > 130 && y < 160) state.leaderboardView = 2;
+            else if (x > 300 && x < 500 && y > 500 && y < 550) state.gameState = 'mainMenu';
+            playSound('click');
+        } else if (state.gameState === 'playing') {
+            if (!state.timerRunning && !state.flags.gameWon) { state.timerRunning = true; state.startTime = performance.now(); }
+            if (y > 450) {
+                const verbs = ['LOOK', 'TALK', 'USE', 'PICKUP'];
+                for (let i = 0; i < verbs.length; i++) {
+                    let col = i % 2, row = Math.floor(i / 2);
+                    if (x > 20 + col * 110 && x < 120 + col * 110 && y > 475 + row * 40 && y < 505 + row * 40) { state.verb = verbs[i]; playSound('click'); return; }
+                }
+                let invX = 300;
+                for (let i = 0; i < state.inventory.length; i++) {
+                    if (x > invX && x < invX + 40 && y > 475 && y < 515) {
+                        if (state.verb === 'USE') state.selectedItem = state.inventory[i].id;
+                        playSound('click'); return;
+                    } invX += 50;
+                }
+            } else {
+                const r = rooms[state.room]; let hit = null;
+                for (let hs of r.hotspots) { if (x > hs.x && x < hs.x + hs.w && y > hs.y && y < hs.y + hs.h) { hit = hs; break; } }
+                if (hit) { if (hit.name === 'Door') hit.onUse(); else if (state.verb === 'PICKUP' || state.verb === 'USE') hit.onUse(state.selectedItem); state.selectedItem = null; playSound('click'); }
+            }
+        }
+    });
+
     window.addEventListener('keydown', (e) => {
         if (state.gameState !== 'nameEntry') return;
         if (e.key === 'ArrowUp') state.nameChars[state.activeCharIndex] = (state.nameChars[state.activeCharIndex] + 1) % 26;
@@ -250,59 +266,12 @@
         playSound('click'); e.preventDefault();
     });
 
-    canvas.addEventListener('mousemove', (e) => {
-        const rect = canvas.getBoundingClientRect();
-        mouseX = (e.clientX - rect.left - 8) * (canvas.width / (rect.width - 16));
-        mouseY = (e.clientY - rect.top - 8) * (canvas.height / (rect.height - 16));
-    });
-
-    canvas.addEventListener('mousedown', () => {
-        const x = mouseX; const y = mouseY;
+    // --- LOOP ---
+    function loop() {
+        time++; if (state.timerRunning) state.elapsedTime = performance.now() - state.startTime;
+        ctx.globalCompositeOperation = 'source-over'; ctx.clearRect(0, 0, 800, 600);
         if (state.gameState === 'mainMenu') {
-            if (x > 300 && x < 500 && y > 250 && y < 300) { playSound('click'); resetGame(1); state.gameState = 'playing'; }
-            else if (x > 300 && x < 500 && y > 330 && y < 380 && state.level2Unlocked) { playSound('click'); resetGame(2); state.gameState = 'playing'; }
-            else if (x > 300 && x < 500 && y > 410 && y < 460) { playSound('click'); state.gameState = 'leaderboard'; }
-        } else if (state.gameState === 'leaderboard') {
-            if (x > 250 && x < 350 && y > 130 && y < 160) { playSound('click'); state.leaderboardView = 1; }
-            else if (x > 450 && x < 550 && y > 130 && y < 160) { playSound('click'); state.leaderboardView = 2; }
-            else if (x > 300 && x < 500 && y > 500 && y < 550) { playSound('click'); state.gameState = 'mainMenu'; }
-        } else if (state.gameState === 'playing') {
-            if (!state.timerRunning && !state.flags.gameWon) { state.timerRunning = true; state.startTime = performance.now(); }
-            if (state.dialogue) { state.dialogue.options[0].action(); return; }
-            if (y > 450) {
-                const verbs = ['LOOK', 'TALK', 'USE', 'PICKUP'];
-                for (let i = 0; i < verbs.length; i++) {
-                    let col = i % 2; let row = Math.floor(i / 2);
-                    if (x > 20 + col * 110 && x < 120 + col * 110 && y > 475 + row * 40 && y < 505 + row * 40) { playSound('click'); state.verb = verbs[i]; return; }
-                }
-                let invX = 300;
-                for (let i = 0; i < state.inventory.length; i++) {
-                    if (x > invX && x < invX + 40 && y > 475 && y < 515) {
-                        playSound('click'); if (state.verb === 'USE') state.selectedItem = state.inventory[i].id;
-                        else showMessage(`It's my ${state.inventory[i].name}.`); return;
-                    } invX += 50;
-                }
-            } else {
-                const r = rooms[state.room]; let hit = null;
-                for (let hs of r.hotspots) { if (x > hs.x && x < hs.x + hs.w && y > hs.y && y < hs.y + hs.h) { hit = hs; break; } }
-                if (hit) {
-                    if (state.verb === 'LOOK' && hit.onLook) hit.onLook();
-                    else if (state.verb === 'TALK' && hit.onTalk) hit.onTalk();
-                    else if (state.verb === 'PICKUP' && hit.onPickUp) hit.onPickUp();
-                    else if (state.verb === 'USE') { if (hit.name === 'Door') hit.onUse(); else if (state.selectedItem) { hit.onUse(state.selectedItem); state.selectedItem = null; } }
-                }
-            }
-        }
-    });
-
-    // --- MAIN ENGINE LOOP ---
-    function update() { time++; if (state.messageTimer > 0) state.messageTimer--; if (state.timerRunning) state.elapsedTime = performance.now() - state.startTime; }
-
-    function draw() {
-        ctx.shadowBlur = 0; ctx.globalCompositeOperation = 'source-over'; ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (state.gameState === 'mainMenu') {
-            ctx.fillStyle = '#050a15'; ctx.fillRect(0, 0, 800, 600);
-            ctx.fillStyle = '#0ff'; ctx.font = "bold 48px Courier New"; ctx.textAlign = "center"; ctx.fillText("PaCA", 400, 120);
+            ctx.fillStyle = '#050a15'; ctx.fillRect(0, 0, 800, 600); ctx.fillStyle = '#0ff'; ctx.font = "bold 48px Courier New"; ctx.textAlign = "center"; ctx.fillText("PaCA", 400, 120);
             drawMenuButton("LEVEL 1", 300, 250, 200, 50, mouseX>300 && mouseX<500 && mouseY>250 && mouseY<300);
             drawMenuButton("LEVEL 2", 300, 330, 200, 50, mouseX>300 && mouseX<500 && mouseY>330 && mouseY<380, !state.level2Unlocked);
             drawMenuButton("SCORES", 300, 410, 200, 50, mouseX>300 && mouseX<500 && mouseY>410 && mouseY<460);
@@ -310,41 +279,25 @@
             rooms[state.room].draw(); updateAndDrawParticles();
             ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 450, 800, 150);
             const vbs = ['LOOK', 'TALK', 'USE', 'PICKUP'];
-            vbs.forEach((v, idx) => { let col = idx % 2; let row = Math.floor(idx / 2); drawButton(v, 20 + col * 110, 475 + row * 40, state.verb === v); });
+            vbs.forEach((v, idx) => { let col = idx % 2, row = Math.floor(idx / 2); drawButton(v, 20+col*110, 475+row*40, state.verb===v); });
             let invX = 300; state.inventory.forEach(item => {
                 ctx.fillStyle = '#111'; ctx.fillRect(invX, 475, 40, 40);
-                if (item.drawIcon) { ctx.save(); ctx.translate(invX + 5, 480); ctx.scale(0.8, 0.8); item.drawIcon(0, 0); ctx.restore(); }
-                else if (item.textCode) { ctx.fillStyle="#0f0"; ctx.textAlign="center"; ctx.font="10px Arial"; ctx.fillText(item.textCode, invX+20, 500); }
+                if (item.drawIcon) { ctx.save(); ctx.translate(invX+5, 480); ctx.scale(0.8,0.8); item.drawIcon(0,0); ctx.restore(); }
                 if (state.selectedItem === item.id) { ctx.strokeStyle = '#0ff'; ctx.strokeRect(invX-2, 473, 44, 44); } invX += 50;
             });
-            if (state.messageTimer > 0) { ctx.fillStyle = "#0ff"; ctx.font = "14px Arial"; ctx.textAlign = "center"; ctx.fillText(state.message, 400, 580); }
-            if (state.dialogue) { ctx.fillStyle = 'rgba(0,10,20,0.9)'; ctx.fillRect(100, 300, 600, 100); ctx.fillStyle = "white"; ctx.textAlign="left"; ctx.fillText(state.dialogue.text, 120, 330); ctx.fillStyle="#0ff"; ctx.fillText("1. "+state.dialogue.options[0].text, 140, 360); }
-            ctx.fillStyle = state.timerRunning ? "#0ff" : "#555"; ctx.font = "bold 14px Courier New"; ctx.textAlign = "right"; ctx.fillText(`L${state.currentLevel} TIME: ${formatTime(state.elapsedTime)}`, 780, 480);
+            ctx.fillStyle = state.timerRunning ? "#0ff" : "#555"; ctx.font = "bold 14px Courier New"; ctx.textAlign = "right"; ctx.fillText(`L${state.currentLevel}: ${formatTime(state.elapsedTime)}`, 780, 480);
         } else if (state.gameState === 'nameEntry') {
             ctx.fillStyle = '#050515'; ctx.fillRect(0,0,800,600); ctx.fillStyle='#0f0'; ctx.textAlign="center"; ctx.font="bold 30px Courier New"; ctx.fillText("ESCAPE SUCCESS", 400, 150);
-            ctx.fillStyle='#fff'; ctx.font="20px Courier New"; ctx.fillText("TIME: "+formatTime(state.elapsedTime), 400, 200);
-            for(let i=0; i<3; i++) {
-                let cX = 300 + (i*100); ctx.strokeStyle = i === state.activeCharIndex ? '#0ff' : '#222'; ctx.strokeRect(cX-30, 355, 60, 60);
-                ctx.fillStyle = i === state.activeCharIndex ? '#0ff' : '#fff'; ctx.font="bold 40px Courier New"; ctx.fillText(ALPHABET[state.nameChars[i]], cX, 400);
-            }
+            for(let i=0; i<3; i++) { let cX = 300 + (i*100); ctx.strokeStyle = i === state.activeCharIndex ? '#0ff' : '#222'; ctx.strokeRect(cX-30, 355, 60, 60); ctx.fillStyle = i === state.activeCharIndex ? '#0ff' : '#fff'; ctx.font="bold 40px Courier New"; ctx.fillText(ALPHABET[state.nameChars[i]], cX, 400); }
         } else if (state.gameState === 'leaderboard') {
-            ctx.fillStyle = '#100505'; ctx.fillRect(0,0,800,600); ctx.fillStyle='#ffd700'; ctx.textAlign="center"; ctx.font="bold 30px Courier New"; ctx.fillText("GLOBAL SCORES", 400, 80);
-            ctx.fillStyle = state.leaderboardView === 1 ? '#0ff' : '#444'; ctx.fillText("L1", 300, 130); ctx.fillStyle = state.leaderboardView === 2 ? '#0f0' : '#444'; ctx.fillText("L2", 500, 130);
+            ctx.fillStyle = '#100505'; ctx.fillRect(0,0,800,600); ctx.fillStyle='#ffd700'; ctx.font="bold 30px Courier New"; ctx.textAlign="center"; ctx.fillText("GLOBAL SCORES", 400, 80);
             let lb = state.leaderboardView === 1 ? globalScoresL1 : globalScoresL2;
             ctx.fillStyle = '#fff'; ctx.font = "18px Courier New"; ctx.textAlign = "left";
             lb.forEach((e, idx) => { ctx.fillText((idx+1)+". "+e.name, 250, 180 + idx*30); ctx.textAlign="right"; ctx.fillText(formatTime(e.time), 550, 180 + idx*30); ctx.textAlign="left"; });
             drawMenuButton("MAIN MENU", 300, 500, 200, 50, mouseX>300 && mouseX<500 && mouseY>500 && mouseY<550);
         }
-        if (mouseY < 450 && state.gameState === 'playing') {
-            ctx.globalCompositeOperation = 'overlay';
-            let g = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 200);
-            g.addColorStop(0, 'rgba(255, 255, 255, 0.3)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = g; ctx.fillRect(0,0,800,450); ctx.globalCompositeOperation = 'source-over';
-        }
-        ctx.fillStyle = '#0ff'; ctx.fillRect(mouseX-2, mouseY-2, 4, 4);
+        requestAnimationFrame(loop);
     }
-
-    function loop() { update(); draw(); requestAnimationFrame(loop); }
     loop();
 </script>
 </body>
